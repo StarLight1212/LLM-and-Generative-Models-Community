@@ -437,3 +437,168 @@ class GPT(nn.Module):
             loss = F.cross_entropy(x.view(-1, x.size(-1)), targets.view(-1))  # 计算交叉熵损失
 
         return x, loss  # 返回输出和损失
+
+# model_run
+import types
+import copy
+import torch
+from torch.nn import functional as F
+
+# 定义常量
+RWKV_K_CLAMP = 60  # K的最大值
+RWKV_K_EPS = 1e-16  # 防止除零的小常数
+RWKV_HEAD_QK_DIM = 256  # 查询和键的维度
+
+DEBUG_TIME = False   # 是否显示训练时间系数
+
+class RWKV_RNN():
+    def __init__(self, MODEL_NAME, RUN_DEVICE, model_type, n_layer, n_embd, ctx_len):
+        """
+        初始化RWKV RNN模型
+        Args:
+            MODEL_NAME: 模型文件名
+            RUN_DEVICE: 运行设备（如'cuda'或'cpu'）
+            model_type: 模型类型
+            n_layer: 层数
+            n_embd: 嵌入维度
+            ctx_len: 上下文长度
+        """
+        self.RUN_DEVICE = RUN_DEVICE  # 设置运行设备
+        self.model_type = model_type  # 设置模型类型
+        self.n_layer = n_layer  # 设置层数
+        self.n_embd = n_embd  # 设置嵌入维度
+        self.ctx_len = ctx_len  # 设置上下文长度
+
+        self.w = types.SimpleNamespace()  # 创建一个简单的命名空间用于存储权重
+
+        # 加载模型权重
+        w = torch.load(MODEL_NAME + '.pth', map_location=torch.device(RUN_DEVICE))
+        for x in w.keys():
+            # 处理时间相关的权重
+            if '.time_' in x:
+                w[x] = w[x].squeeze()  # 去掉多余的维度
+            if '.time_decay' in x:
+                w[x] = torch.exp(-torch.exp(w[x]))  # 计算时间衰减
+            if '.time_first' in x:
+                w[x] = torch.exp(w[x])  # 计算时间初始值
+            if DEBUG_TIME and '.time_' in x:
+                print(x, w[x].squeeze().cpu().numpy())  # 调试输出时间权重
+
+            # 将权重存储到命名空间中
+            xx = x.split('.')
+            here = self.w
+            for i in range(len(xx)):
+                if xx[i].isdigit():
+                    ii = int(xx[i])
+                    if ii not in here:
+                        here[ii] = types.SimpleNamespace()  # 创建新的命名空间
+                    here = here[ii]
+                else:
+                    if i == len(xx) - 1:
+                        setattr(here, xx[i], w[x])  # 设置权重
+                    elif not hasattr(here, xx[i]):
+                        if xx[i+1].isdigit():
+                            setattr(here, xx[i], {})  # 创建字典
+                        else:
+                            setattr(here, xx[i], types.SimpleNamespace())  # 创建新的命名空间
+                    here = getattr(here, xx[i])
+
+        self.clear()  # 清空状态
+
+    def clear(self):
+        """清空内部状态"""
+        self.xx = {}  # 存储中间结果
+        self.aa = {}  # 存储时间混合的中间结果
+        self.bb = {}  # 存储时间混合的中间结果
+        self.hk = None  # 存储历史键
+
+    def save(self, target):
+        """保存当前状态到目标对象"""
+        target.xx = copy.deepcopy(self.xx)
+        target.aa = copy.deepcopy(self.aa)
+        target.bb = copy.deepcopy(self.bb)
+        target.hk = copy.deepcopy(self.hk)
+
+    def load(self, target):
+        """从目标对象加载状态"""
+        self.xx = copy.deepcopy(target.xx)
+        self.aa = copy.deepcopy(target.aa)
+        self.bb = copy.deepcopy(target.bb)
+        self.hk = copy.deepcopy(target.hk)
+
+    def LN(self, xx, w):
+        """层归一化"""
+        return F.layer_norm(xx, (self.n_embd,), weight=w.weight, bias=w.bias)
+
+    def FF(self, xx, w, name):
+        """前馈网络"""
+        if name not in self.xx:
+            self.xx[name] = torch.zeros(self.n_embd, device=self.RUN_DEVICE)  # 初始化中间结果
+        x = xx * w.time_mix + self.xx[name] * (1 - w.time_mix)  # 混合当前输入和上一个输入
+        self.xx[name] = xx  # 更新中间结果
+
+        r = torch.sigmoid(w.receptance.weight @ x)  # 计算接收权重
+        k = torch.square(torch.relu(w.key.weight @ x))  # 计算键
+        kv = w.value.weight @ k  # 计算值
+
+        return r * kv  # 返回加权值
+
+    def SA(self, xx, w, name):
+        """自注意力机制"""
+        if name not in self.xx:
+            self.xx[name] = torch.zeros(self.n_embd, device=self.RUN_DEVICE)  # 初始化中间结果
+            self.aa[name] = torch.zeros(self.n_embd, device=self.RUN_DEVICE)  # 初始化时间混合结果
+            self.bb[name] = torch.zeros(self.n_embd, device=self.RUN_DEVICE)  # 初始化时间混合结果
+        x = xx * w.time_mix + self.xx[name] * (1 - w.time_mix)  # 混合当前输入和上一个输入
+        self.xx[name] = xx  # 更新中间结果
+
+        r = torch.sigmoid(w.receptance.weight @ x)  # 计算接收权重
+
+        k = torch.exp(torch.clamp(w.key.weight @ x, max=RWKV_K_CLAMP))  # 计算键并限制最大值
+        v = w.value.weight @ x  # 计算值
+        kv = k * v  # 计算加权值
+
+        # 更新时间混合结果
+        a = self.aa[name] + w.time_first * kv
+        b = self.bb[name] + w.time_first * k
+        self.aa[name] = w.time_decay * self.aa[name] + kv
+        self.bb[name] = w.time_decay * self.bb[name] + k
+
+        rwkv = r * a / (b + RWKV_K_EPS)  # 计算RWKV输出
+
+        return w.output.weight @ rwkv  # 返回最终输出
+
+    def run(self, ctx):
+        """运行模型"""
+        w = self.w
+        x = w.emb.weight[ctx[-1]]  # 获取最后一个上下文的嵌入
+
+        for i in range(self.n_layer):
+            x = self.LN(x, w.blocks[i].ln1)  # 第一层归一化
+            if i == 0 and self.model_type == 'RWKV-ffnPre':
+                x = x + self.FF(x, w.blocks[i].ffnPre, f'ffnPre.{i}')  # 前馈网络
+            else:
+                x = x + self.SA(x, w.blocks[i].att, f'att.{i}')  # 自注意力机制
+            x = self.LN(x, w.blocks[i].ln2)  # 第二层归一化
+            x = x + self.FF(x, w.blocks[i].ffn, f'ffn.{i}')  # 前馈网络
+
+        x = self.LN(x, w.ln_out)  # 输出层归一化
+
+        # 更新历史键
+        if self.hk is None:
+            self.hk = (w.head_k.weight @ x).unsqueeze(0)  # 初始化历史键
+        else:
+            self.hk = torch.cat([self.hk, (w.head_k.weight @ x).unsqueeze(0)], dim=0)  # 追加历史键
+        if self.hk.shape[0] > self.ctx_len:
+            self.hk = self.hk[-self.ctx_len:, :]  # 保持历史键的长度
+
+        q = w.head_q.weight @ x  # 计算查询
+
+        x = w.head.weight @ x  # 计算输出
+        x = x.cpu().numpy().tolist()  # 转换为列表
+
+        c = (self.hk @ q) / RWKV_HEAD_QK_DIM  # 计算上下文
+        for i in range(len(c)):
+            x[ctx[i]] += c[i]  # 更新输出
+
+        return x  # 返回最终输出
