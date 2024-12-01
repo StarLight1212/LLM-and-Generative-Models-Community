@@ -68,3 +68,13 @@ class OptimizedDFAFilter(object):
                 ret.append(message[start])
                 start += 1
         return ''.join(ret)
+
+
+if __name__ == "__main__":
+    # 定义谐音字典
+    homophone_dict = {'5': '五', 'S': '死', '@': '爱'}
+    dfa = OptimizedDFAFilter(homophone_dict=homophone_dict)
+    dfa.add("我爱你")
+    dfa.add("你死我活")
+    print(dfa.filter("我@你"))  # 输出：****你
+    print(dfa.filter("你S我活"))  # 输出：****
