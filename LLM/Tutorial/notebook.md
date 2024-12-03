@@ -171,7 +171,8 @@ def deploy(input_batch):
 ```
 
 通过以上步骤，可以有效地训练、对齐和部署Mixture of Experts模型，使其在处理复杂任务时表现出色。这种方法不仅提高了模型的性能，还优化了计算资源的使用。
-MoE Materials: 
+
+### MoE Materials: 
 1. https://github.com/laekov/fastmoe
 2. https://github.com/pjlab-sys4nlp/llama-moe
 3. https://github.com/IEIT-Yuan/Yuan2.0-M32
