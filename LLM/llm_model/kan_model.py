@@ -1,3 +1,4 @@
+# https://github.com/Blealtan/efficient-kan/blob/master/src/efficient_kan/kan.py
 import torch
 import torch.nn.functional as F
 import math
