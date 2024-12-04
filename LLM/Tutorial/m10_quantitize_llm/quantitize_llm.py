@@ -1,3 +1,7 @@
+# INT8 量化
+# python script.py --model_path ./model_load/llama3.2_1B/ --quantization int8 --output_dir ./output/int8_model/
+# INT4 量化
+# python script.py --model_path ./model_load/llama3.2_1B/ --quantization int4 --output_dir ./output/int4_model/
 import torch
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -94,6 +98,31 @@ def save_quantized_model(model, tokenizer, output_dir, method):
     # 保存tokenizer
     tokenizer.save_pretrained(output_dir)
     print(f"Quantized model and tokenizer saved to {output_dir}")
+
+
+# 加载INT4量化模型
+def load_int4_model(model_path, base_model_path):
+    # 加载原始模型结构
+    model = AutoModelForCausalLM.from_pretrained(base_model_path, torch_dtype=torch.float32)
+    
+    # 加载量化参数
+    checkpoint = torch.load(os.path.join(model_path, 'quantized_model.pt'))
+    quantized_state_dict = checkpoint['quantized_state_dict']
+    scales = checkpoint['scales']
+    
+    # 重建模型参数
+    for name, param in model.named_parameters():
+        if name in quantized_state_dict:
+            if name + '_scale' in scales:
+                # 反量化参数
+                param.data = Int4Quantizer.dequantize_tensor(
+                    quantized_state_dict[name],
+                    scales[name + '_scale']
+                )
+            else:
+                param.data = quantized_state_dict[name]
+    
+    return model
 
 
 def verify_quantized_model(output_dir, method):
