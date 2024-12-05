@@ -1,0 +1,17 @@
+arch: resnet50
+batch_size: 256
+data: ../datasets
+dataset_name: stl10
+device: cuda  # 直接使用字符串而不是 torch.device 对象
+disable_cuda: false
+epochs: 40
+fp16_precision: false
+gpu_index: 0
+log_every_n_steps: 100
+lr: 0.0003
+n_views: 2
+out_dim: 128
+seed: null
+temperature: 0.07
+weight_decay: 0.0001
+workers: 12
