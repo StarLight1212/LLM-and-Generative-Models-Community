@@ -178,7 +178,7 @@ def deploy(input_batch):
 3. https://github.com/IEIT-Yuan/Yuan2.0-M32
 
 
-## 二、什么是 LayerNorm？
+## 三、什么是 LayerNorm？
 Layer Normalization（简称 LayerNorm）是一种深度学习中的归一化技术，主要用于稳定神经网络的训练，尤其是在 Transformer 等模型中。以下是以通俗易懂的方式对其进行讲解：
 
 LayerNorm 是一种归一化方法，用于调整神经网络中每一层的输出数据，使其更加平滑和稳定。与常见的 Batch Normalization（BN）不同，LayerNorm 不依赖于小批量数据，而是对单个样本的特征维度进行归一化处理。
@@ -245,5 +245,5 @@ output = layer_norm(x)
 通过以上代码，我们可以看到 LayerNorm 是如何对每个样本的特征进行标准化并恢复其表达能力.
 
 
-## 三、什么是 ---？
+## 四、什么是 ---？
 
