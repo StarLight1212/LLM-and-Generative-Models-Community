@@ -178,3 +178,72 @@ def deploy(input_batch):
 3. https://github.com/IEIT-Yuan/Yuan2.0-M32
 
 
+## 二、什么是 LayerNorm？
+Layer Normalization（简称 LayerNorm）是一种深度学习中的归一化技术，主要用于稳定神经网络的训练，尤其是在 Transformer 等模型中。以下是以通俗易懂的方式对其进行讲解：
+
+LayerNorm 是一种归一化方法，用于调整神经网络中每一层的输出数据，使其更加平滑和稳定。与常见的 Batch Normalization（BN）不同，LayerNorm 不依赖于小批量数据，而是对单个样本的特征维度进行归一化处理。
+
+## 为什么需要 LayerNorm？
+在深度学习中，数据分布可能会随着训练过程发生变化（称为内部协变量偏移），这会导致模型收敛变慢甚至训练失败。LayerNorm 的作用是：
+- **减小数据差异**：通过对每层输出的特征进行标准化，减小数值差异，使模型更容易学习。
+- **提高训练稳定性**：避免梯度消失或爆炸问题，加速收敛。
+- **适应小批量训练**：特别适合 NLP 等领域的小批量或单样本训练场景。
+
+## LayerNorm 的工作原理
+LayerNorm 的核心思想是对每个样本在同一层的所有神经元输出进行归一化。具体步骤如下：
+
+1. **计算均值和方差**：
+   对输入特征 $$ x $$ 的所有维度计算均值 $$ \mu $$ 和方差 $$ \sigma^2 $$：
+   $$
+   \mu = \frac{1}{H} \sum_{i=1}^H x_i, \quad \sigma^2 = \frac{1}{H} \sum_{i=1}^H (x_i - \mu)^2
+   $$
+   其中 $$ H $$ 是特征维度的大小。
+
+2. **标准化**：
+   将每个特征值减去均值并除以标准差，使其均值为 0，方差为 1：
+   $$
+   x' = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}}
+   $$
+   $$ \epsilon $$ 是一个很小的数，用于防止除零错误。
+
+3. **缩放和平移**：
+   引入可学习参数 $$ \gamma $$（缩放因子）和 $$ \beta $$（偏移因子），恢复数据表达能力：
+   $$
+   y = \gamma x' + \beta
+   $$
+
+## LayerNorm 的优势
+- **不依赖批次大小**：与 BN 不同，LayerNorm 对单个样本操作，因此在小批量甚至单样本情况下表现优异。
+- **适用范围广**：可以用于循环神经网络（RNN）、Transformer 等需要处理序列数据的模型。
+- **平滑损失函数**：通过稳定输入分布，保持梯度下降过程中的稳定性。
+
+## 示例代码
+以下是 PyTorch 中自定义实现 LayerNorm 的示例代码：
+
+```python
+import torch
+import torch.nn as nn
+
+class LayerNorm(nn.Module):
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.gamma = nn.Parameter(torch.ones(features))
+        self.beta = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+
+# 使用示例
+x = torch.randn(32, 64)  # 假设输入为 [batch_size, features]
+layer_norm = LayerNorm(features=64)
+output = layer_norm(x)
+```
+
+通过以上代码，我们可以看到 LayerNorm 是如何对每个样本的特征进行标准化并恢复其表达能力.
+
+
+## 三、什么是 ---？
+
